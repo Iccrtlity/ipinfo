@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ipinfo – quick IP lookup</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>ipinfo</h1>
+    <p>Shows your IP + geolocation details</p>
+
+    <div class="input-group">
+      <input type="text" id="ip-input" placeholder="Enter IP (leave blank for your own)" autocomplete="off">
+      <button id="lookup-btn">Lookup</button>
+    </div>
+
+    <div id="loading" class="loading hidden">Loading...</div>
+    <div id="error" class="error hidden"></div>
+
+    <div id="result" class="result hidden">
+      <div class="card">
+        <h3>IP: <span id="ip"></span></h3>
+        <ul id="details"></ul>
+      </div>
+
+      <div class="actions">
+        <button id="copy-all">Copy all info</button>
+        <button id="refresh">Refresh (your IP)</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
