@@ -8,7 +8,96 @@ const detailsUl = document.getElementById('details');
 const copyAll = document.getElementById('copy-all');
 const refresh = document.getElementById('refresh');
 
-const API_BASE = 'https://ip-api.com/json/';
+const providers = [
+  {
+    buildUrl: ip => ip ? `https://ipwho.is/${encodeURIComponent(ip)}` : 'https://ipwho.is/',
+    parse: async res => {
+      if (!res.ok) throw new Error('Provider unavailable');
+      const data = await res.json();
+      if (data.success === false) throw new Error(data.message || 'Lookup failed');
+      return {
+        ip: data.ip || '',
+        country: data.country || '',
+        countryCode: data.country_code || '',
+        region: data.region || '',
+        city: data.city || '',
+        postal: data.postal || '',
+        latitude: data.latitude,
+        longitude: data.longitude,
+        timezone: data.timezone?.id || '',
+        org: data.connection?.org || '',
+        asn: data.connection?.asn ? `AS${data.connection.asn}` : ''
+      };
+    }
+  },
+  {
+    buildUrl: ip => ip ? `https://ipapi.co/${encodeURIComponent(ip)}/json/` : 'https://ipapi.co/json/',
+    parse: async res => {
+      if (!res.ok) throw new Error('Provider unavailable');
+      const data = await res.json();
+      if (data.error) throw new Error(data.reason || 'Lookup failed');
+      return {
+        ip: data.ip || '',
+        country: data.country_name || '',
+        countryCode: data.country_code || '',
+        region: data.region || '',
+        city: data.city || '',
+        postal: data.postal || '',
+        latitude: data.latitude,
+        longitude: data.longitude,
+        timezone: data.timezone || '',
+        org: data.org || '',
+        asn: data.asn || ''
+      };
+    }
+  },
+  {
+    buildUrl: ip => ip ? `https://ipinfo.io/${encodeURIComponent(ip)}/json` : 'https://ipinfo.io/json',
+    parse: async res => {
+      if (!res.ok) throw new Error('Provider unavailable');
+      const data = await res.json();
+      if (data.bogon) throw new Error('Private or invalid IP');
+      const [lat, lon] = (data.loc || '').split(',');
+      return {
+        ip: data.ip || '',
+        country: data.country || '',
+        countryCode: data.country || '',
+        region: data.region || '',
+        city: data.city || '',
+        postal: data.postal || '',
+        latitude: lat ? Number(lat) : null,
+        longitude: lon ? Number(lon) : null,
+        timezone: data.timezone || '',
+        org: data.org || '',
+        asn: data.org ? data.org.split(' ')[0] : ''
+      };
+    }
+  }
+];
+
+async function fetchWithTimeout(url, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function lookupIpInfo(ip = '') {
+  let lastError = new Error('API error');
+  for (const provider of providers) {
+    try {
+      const res = await fetchWithTimeout(provider.buildUrl(ip));
+      const normalized = await provider.parse(res);
+      return normalized;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
+}
 
 async function fetchIpInfo(ip = '') {
   loading.classList.remove('hidden');
@@ -16,20 +105,13 @@ async function fetchIpInfo(ip = '') {
   result.classList.add('hidden');
 
   try {
-    const url = ip ? `${API_BASE}${ip}` : API_BASE;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error('API error');
-
-    const data = await res.json();
-
-    if (data.status === 'fail') {
-      throw new Error(data.message || 'Invalid IP or API issue');
-    }
-
+    const data = await lookupIpInfo(ip);
     renderInfo(data);
     result.classList.remove('hidden');
   } catch (err) {
-    errorDiv.textContent = err.message || 'Something went wrong – check your connection';
+    errorDiv.textContent = err.name === 'TypeError' || err.name === 'AbortError'
+      ? 'Failed to fetch. Check network, VPN/adblock, or CORS policy.'
+      : (err.message || 'API error');
     errorDiv.classList.remove('hidden');
   } finally {
     loading.classList.add('hidden');
@@ -37,22 +119,21 @@ async function fetchIpInfo(ip = '') {
 }
 
 function renderInfo(data) {
-  ipSpan.textContent = data.query;
+  ipSpan.textContent = data.ip || 'Unknown';
+  const countryValue = data.country && data.countryCode
+    ? `${data.country} (${data.countryCode})`
+    : data.country || data.countryCode || '';
+  const regionValue = data.region || '';
 
   const fields = [
-    { label: 'Status', value: data.status },
-    { label: 'Country', value: `${data.country} (${data.countryCode})` },
-    { label: 'Region', value: `${data.regionName} (${data.region})` },
+    { label: 'Country', value: countryValue },
+    { label: 'Region', value: regionValue },
     { label: 'City', value: data.city },
-    { label: 'ZIP', value: data.zip },
-    { label: 'Lat / Lon', value: `${data.lat}, ${data.lon}` },
-    { label: 'Timezone', value: data.timezone },
-    { label: 'ISP', value: data.isp },
-    { label: 'Organization', value: data.org },
-    { label: 'AS', value: data.as },
-    { label: 'Mobile?', value: data.mobile ? 'Yes' : 'No' },
-    { label: 'Proxy/VPN?', value: data.proxy ? 'Yes' : 'No' },
-    { label: 'Hosting?', value: data.hosting ? 'Yes' : 'No' }
+    { label: 'ZIP', value: data.postal },
+    { label: 'Lat / Lon', value: (data.latitude != null && data.longitude != null) ? `${data.latitude}, ${data.longitude}` : '' },
+    { label: 'Timezone', value: data.timezone || '' },
+    { label: 'Organization', value: data.org || '' },
+    { label: 'AS', value: data.asn || '' }
   ];
 
   detailsUl.innerHTML = fields
